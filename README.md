@@ -9,6 +9,10 @@
 [![WebRTC](https://img.shields.io/badge/WebRTC-Mesh_P2P-ef4444?style=for-the-badge)]()
 [![FPS](https://img.shields.io/badge/Vídeo-1080p_60FPS_H.264-f59e0b?style=for-the-badge)]()
 
+<br/>
+
+<img src="./preview.gif" width="100%" alt="Prévia Animada do AzogStream" style="border-radius: 12px;" />
+
 </div>
 
 ---
