@@ -29,8 +29,12 @@ const state = {
   roomCode: '',
   isHost: false,
   hostPeerId: '',
+  roomName: '',
+  roomColor: '',
+  autoGo: false, // entrou por um atalho de "salas recentes"
+  myAvatar: null,
 
-  // Mapa de participantes: peerId -> { peerId, username, isStreaming, hasMic }
+  // Mapa de participantes: peerId -> { peerId, username, isStreaming, hasMic, micMuted, deafened }
   members: new Map(),
 
   // Conexões de Dados (DataConnection): peerId -> conn
@@ -41,6 +45,9 @@ const state = {
 
   // Chamadas de Vídeo/Tela recebidas por mim: peerId -> MediaConnection
   incomingScreenCalls: new Map(),
+
+  // Chamadas de Voz recebidas por mim: peerId -> MediaConnection (usadas para detectar quem está falando)
+  incomingVoiceCalls: new Map(),
 
   // Chamadas de Voz enviadas por mim: peerId -> MediaConnection
   outgoingVoiceCalls: new Map(),
@@ -56,7 +63,7 @@ const state = {
   localVoiceStream: null,
 
   // Preferências de UI (gpuSaverSelfPreview = true por padrão para não gastar GPU de quem está jogando)
-  layoutMode: 'grid', // 'grid' | 'spotlight'
+  layoutMode: 'grid', // 'grid' | 'spotlight' | 'world' (praça)
   spotlightPeerId: null,
   gpuSaverSelfPreview: true,
   statsIntervals: new Map()
@@ -91,13 +98,13 @@ const dom = {
   btnReconnectStreams: document.getElementById('btn-reconnect-streams'),
   btnLayoutGrid: document.getElementById('btn-layout-grid'),
   btnLayoutSpotlight: document.getElementById('btn-layout-spotlight'),
+  btnLayoutWorld: document.getElementById('btn-layout-world'),
   btnToggleSidebar: document.getElementById('btn-toggle-sidebar'),
   peerCountBadge: document.getElementById('peer-count-badge'),
 
   // Palco e Sidebar
-  emptyStage: document.getElementById('empty-stage'),
-  btnEmptyStartStream: document.getElementById('btn-empty-start-stream'),
-  btnEmptyReconnect: document.getElementById('btn-empty-reconnect'),
+  stageArea: document.getElementById('stage-area'),
+  worldStage: document.getElementById('world-stage'),
   streamsGrid: document.getElementById('streams-grid'),
   roomSidebar: document.getElementById('room-sidebar'),
   membersCount: document.getElementById('members-count'),
@@ -110,17 +117,14 @@ const dom = {
   // Dock Inferior
   btnToggleStream: document.getElementById('btn-toggle-stream'),
   streamBtnLabel: document.getElementById('stream-btn-label'),
-  btnToggleMic: document.getElementById('btn-toggle-mic'),
-  iconMicOff: document.getElementById('icon-mic-off'),
-  iconMicOn: document.getElementById('icon-mic-on'),
-  micBtnLabel: document.getElementById('mic-btn-label'),
+  streamMenu: document.getElementById('stream-menu'),
+  btnMenuShare: document.getElementById('btn-menu-share'),
   btnToggleSelfPreview: document.getElementById('btn-toggle-self-preview'),
   selfPreviewLabel: document.getElementById('self-preview-label'),
   btnLeaveRoom: document.getElementById('btn-leave-room'),
 
   // Modal PS5 / PSN
   btnOpenPs5Modal: document.getElementById('btn-open-ps5-modal'),
-  btnEmptyPs5: document.getElementById('btn-empty-ps5'),
   ps5Modal: document.getElementById('ps5-modal'),
   btnClosePs5Modal: document.getElementById('btn-close-ps5-modal'),
   ps5EmbedForm: document.getElementById('ps5-embed-form'),
@@ -132,7 +136,6 @@ const dom = {
 
   // Modal de Diagnóstico
   btnOpenDiagModal: document.getElementById('btn-open-diag-modal'),
-  btnEmptyDiag: document.getElementById('btn-empty-diag'),
   diagModal: document.getElementById('diag-modal'),
   btnCloseDiagModal: document.getElementById('btn-close-diag-modal'),
   diagStatusBanner: document.getElementById('diag-status-banner'),
@@ -143,6 +146,24 @@ const dom = {
   btnRerunDiag: document.getElementById('btn-rerun-diag'),
   btnCopyDiag: document.getElementById('btn-copy-diag'),
   btnSendDiagChat: document.getElementById('btn-send-diag-chat'),
+
+  // Layout de comunidade (trilho, canais, painel do usuário, chat)
+  railRoomIcon: document.getElementById('rail-room-icon'),
+  btnRailNewRoom: document.getElementById('btn-rail-new-room'),
+  roomTitleName: document.getElementById('room-title-name'),
+  btnChannelChat: document.getElementById('btn-channel-chat'),
+  chatUnread: document.getElementById('chat-unread'),
+  topbarUnread: document.getElementById('topbar-unread'),
+  btnCloseChat: document.getElementById('btn-close-chat'),
+  userPanelAvatar: document.getElementById('user-panel-avatar'),
+  userPanelName: document.getElementById('user-panel-name'),
+  userPanelStatus: document.getElementById('user-panel-status'),
+  btnUserMic: document.getElementById('btn-user-mic'),
+  btnOpenSettings: document.getElementById('btn-open-settings'),
+  settingsModal: document.getElementById('settings-modal'),
+  btnCloseSettings: document.getElementById('btn-close-settings'),
+  btnToggleChannels: document.getElementById('btn-toggle-channels'),
+  drawerBackdrop: document.getElementById('drawer-backdrop'),
 
   voiceAudioContainer: document.getElementById('voice-audio-container'),
   toastContainer: document.getElementById('toast-container')
@@ -210,14 +231,25 @@ function initLobby() {
   dom.btnCreateRoom.addEventListener('click', () => {
     const code = sanitizeCode(dom.createRoomCode.value);
     if (!code) return setLobbyStatus('Digite um código válido para a sala.', true);
-    startSession(code, true);
+    startSession(code, true, getCreateRoomMeta());
   });
 
   dom.btnJoinRoom.addEventListener('click', () => {
     const code = sanitizeCode(dom.joinRoomCode.value);
     if (!code) return setLobbyStatus('Digite o código da sala dos seus amigos.', true);
-    startSession(code, false);
+    const known = loadRecentRooms().find((r) => r.code === code);
+    startSession(code, false, known ? { name: known.name, color: known.color } : {});
   });
+
+  // Atalho das salas recentes (?room=CODIGO&go=host|guest): entra direto
+  const go = params.get('go');
+  if (urlRoom && (go === 'host' || go === 'guest')) {
+    const code = sanitizeCode(urlRoom);
+    setTimeout(() => {
+      const known = loadRecentRooms().find((r) => r.code === code);
+      startSession(code, go === 'host', { name: known && known.name, color: known && known.color, autoGo: true });
+    }, 0);
+  }
 }
 
 function switchLobbyTab(tab) {
@@ -232,7 +264,7 @@ function switchLobbyTab(tab) {
 // =========================================================
 // CONEXÃO PEERJS & TOPOLOGIA MESH DE SALA
 // =========================================================
-function startSession(roomCode, asHost) {
+function startSession(roomCode, asHost, meta = {}) {
   const username = dom.usernameInput.value.trim() || 'Player';
   localStorage.setItem('gamestream_username', username);
 
@@ -240,6 +272,15 @@ function startSession(roomCode, asHost) {
   state.roomCode = roomCode;
   state.isHost = asHost;
   state.hostPeerId = `${ROOM_PREFIX}${roomCode}`;
+  state.autoGo = Boolean(meta.autoGo);
+
+  // Nome e cor: o host define; quem entra mostra o que já conhecia até o host confirmar
+  state.roomName = cleanRoomName(meta.name) || (asHost ? cleanRoomName(`Sala de ${username}`) : '');
+  state.roomColor = meta.color ? cleanRoomColor(meta.color) : asHost ? ROOM_COLORS[0] : '';
+
+  // Avatar: o salvo no navegador ou, na primeira vez, um sorteado pelo apelido (fica salvo)
+  state.myAvatar = sanitizeAvatar(state.myAvatar || loadSavedAvatar(), username);
+  saveMyAvatar(state.myAvatar);
 
   setLobbyStatus(asHost ? 'Criando sala...' : `Conectando à sala ${roomCode}...`);
 
@@ -259,7 +300,8 @@ function startSession(roomCode, asHost) {
       peerId: id,
       username: state.myUsername,
       isStreaming: false,
-      hasMic: false
+      hasMic: false,
+      avatar: state.myAvatar
     });
 
     if (asHost) {
@@ -281,7 +323,17 @@ function startSession(roomCode, asHost) {
 
   peer.on('error', (err) => {
     console.error('[PeerJS Error]', err);
-    if (err.type === 'unavailable-id' && asHost) {
+    if (err.type === 'unavailable-id' && asHost && state.autoGo) {
+      // A sala ainda estava aberta (talvez em outra aba): entra nela como convidado
+      state.autoGo = false;
+      showToast('Essa sala já estava aberta. Entrando como convidado.');
+      try {
+        peer.destroy();
+      } catch (e) {
+        /* já destruído */
+      }
+      startSession(roomCode, false, { name: state.roomName, color: state.roomColor });
+    } else if (err.type === 'unavailable-id' && asHost) {
       setLobbyStatus('Esse código de sala já está em uso! Tente clicar em "Entrar com Código" ou gere outro.', true);
     } else if (err.type === 'peer-unavailable') {
       setLobbyStatus(`Sala "${roomCode}" não encontrada ou o Host já fechou a sala.`, true);
@@ -290,6 +342,16 @@ function startSession(roomCode, asHost) {
       setLobbyStatus(`Erro de conexão: ${err.type || err.message}`, true);
     }
   });
+}
+
+// Encerra transmissão, voz e conexões e vai para o endereço dado (por padrão, o lobby)
+function leaveRoom(url) {
+  stopScreenShare();
+  releaseRawStream();
+  if (state.myPeer) {
+    state.myPeer.destroy();
+  }
+  window.location.href = url || window.location.pathname;
 }
 
 function connectToPeer(targetPeerId, isInitialHostConn = false) {
@@ -317,13 +379,21 @@ function setupDataConnection(conn, isInitialHostConn = false) {
     }
 
     // Envia nossas informações atuais para o peer recém-conectado
-    conn.send({
+    const hello = {
       type: 'HELLO',
       peerId: state.myPeerId,
       username: state.myUsername,
       isStreaming: Boolean(state.localScreenStream),
-      hasMic: Boolean(state.localVoiceStream)
-    });
+      hasMic: Boolean(state.localVoiceStream),
+      micMuted: voice.muted,
+      deafened: voice.deafened,
+      avatar: state.myAvatar
+    };
+    // O host é quem dá nome e cor à sala
+    if (state.isHost) {
+      hello.room = { name: state.roomName, color: state.roomColor };
+    }
+    conn.send(hello);
   });
 
   conn.on('data', (data) => {
@@ -349,8 +419,16 @@ function handleSignalingData(conn, data) {
         peerId: data.peerId,
         username: data.username || 'Amigo',
         isStreaming: Boolean(data.isStreaming),
-        hasMic: Boolean(data.hasMic)
+        hasMic: Boolean(data.hasMic),
+        micMuted: Boolean(data.micMuted),
+        deafened: Boolean(data.deafened),
+        avatar: sanitizeAvatar(data.avatar, data.username)
       });
+
+      // Nome e cor da sala vêm do host
+      if (data.room && !state.isHost && data.peerId === state.hostPeerId) {
+        applyRoomMeta(data.room);
+      }
 
       if (isNew) {
         addSystemMessage(`${data.username} entrou na sala.`);
@@ -387,6 +465,8 @@ function handleSignalingData(conn, data) {
         broadcastRoomRoster();
       }
       renderMembersList();
+      // Quem acabou de chegar precisa saber onde meu avatar está na praça
+      worldSendState(conn);
       break;
     }
 
@@ -411,6 +491,7 @@ function handleSignalingData(conn, data) {
       // Recebido do Host: garante que nos conectemos diretamente a todos os outros amigos da sala
       if (Array.isArray(data.members)) {
         data.members.forEach((m) => {
+          m.avatar = sanitizeAvatar(m.avatar, m.username);
           state.members.set(m.peerId, m);
           if (m.peerId !== state.myPeerId && !state.dataConns.has(m.peerId)) {
             connectToPeer(m.peerId, false);
@@ -426,6 +507,8 @@ function handleSignalingData(conn, data) {
       if (member) {
         member.isStreaming = Boolean(data.isStreaming);
         member.hasMic = Boolean(data.hasMic);
+        member.micMuted = Boolean(data.micMuted);
+        member.deafened = Boolean(data.deafened);
         if (!member.isStreaming) {
           removeScreenStreamTile(data.peerId);
         }
@@ -446,6 +529,21 @@ function handleSignalingData(conn, data) {
 
     case 'CHAT': {
       appendChatMessage(data.username, data.text, data.timestamp);
+      if (data.peerId) worldBubble(data.peerId, data.text);
+      break;
+    }
+
+    case 'AVATAR': {
+      const member = state.members.get(data.peerId);
+      if (member) {
+        member.avatar = sanitizeAvatar(data.avatar, member.username);
+        renderMembersList();
+      }
+      break;
+    }
+
+    case 'WALK': {
+      worldOnWalk(data);
       break;
     }
 
@@ -486,6 +584,8 @@ function broadcastMyState() {
   if (me) {
     me.isStreaming = Boolean(state.localScreenStream);
     me.hasMic = Boolean(state.localVoiceStream);
+    me.micMuted = voice.muted;
+    me.deafened = voice.deafened;
   }
   renderMembersList();
 
@@ -493,7 +593,9 @@ function broadcastMyState() {
     type: 'MEMBER_STATE',
     peerId: state.myPeerId,
     isStreaming: Boolean(state.localScreenStream),
-    hasMic: Boolean(state.localVoiceStream)
+    hasMic: Boolean(state.localVoiceStream),
+    micMuted: voice.muted,
+    deafened: voice.deafened
   });
 }
 
@@ -507,6 +609,7 @@ function handlePeerDisconnect(peerId) {
   state.dataConns.delete(peerId);
   state.outgoingScreenCalls.delete(peerId);
   state.outgoingVoiceCalls.delete(peerId);
+  state.incomingVoiceCalls.delete(peerId);
 
   removeScreenStreamTile(peerId);
   removeVoiceAudioElement(peerId);
@@ -748,40 +851,10 @@ function updateLiveStreamParameters() {
 // =========================================================
 // MICROFONE / CHAT DE VOZ P2P
 // =========================================================
-async function toggleMicrophone() {
-  if (state.localVoiceStream) {
-    state.localVoiceStream.getTracks().forEach((t) => t.stop());
-    state.localVoiceStream = null;
-    state.outgoingVoiceCalls.forEach((c) => c.close());
-    state.outgoingVoiceCalls.clear();
-    updateMicControlsUI(false);
-    broadcastMyState();
-    showToast('Microfone desativado.');
-    return;
-  }
-
-  try {
-    const voiceStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: false
-    });
-
-    state.localVoiceStream = voiceStream;
-    state.dataConns.forEach((_, peerId) => {
-      callPeerWithVoice(peerId);
-    });
-
-    updateMicControlsUI(true);
-    broadcastMyState();
-    showToast('Microfone ativado!');
-  } catch (err) {
-    console.error('Erro ao acessar microfone:', err);
-    showToast('Permissão de microfone negada ou dispositivo indisponível.');
-  }
+// A captura, o mudo e as configurações de voz ficam em voice.js.
+// Fora da voz este botão entra no canal; dentro, alterna o mudo sem derrubar a chamada.
+function toggleMicrophone() {
+  toggleMute();
 }
 
 function callPeerWithVoice(targetPeerId) {
@@ -805,6 +878,8 @@ function handleIncomingCall(call) {
 
   if (streamType === 'screen') {
     state.incomingScreenCalls.set(call.peer, call);
+  } else if (streamType === 'voice') {
+    state.incomingVoiceCalls.set(call.peer, call);
   }
 
   const fallbackMediaStream = new MediaStream();
@@ -851,6 +926,9 @@ function handleIncomingCall(call) {
 
   call.on('close', () => {
     if (streamType === 'voice') {
+      if (state.incomingVoiceCalls.get(call.peer) === call) {
+        state.incomingVoiceCalls.delete(call.peer);
+      }
       removeVoiceAudioElement(call.peer);
     } else {
       // Só remove o bloco de vídeo se esta chamada ainda for a chamada ativa daquele peer
@@ -875,6 +953,8 @@ function attachVoiceStream(peerId, stream) {
     dom.voiceAudioContainer.appendChild(audioEl);
   }
   audioEl.srcObject = remoteStreamOrClone(stream);
+  // Volume geral, volume desta pessoa, ensurdecer e dispositivo de saída
+  applyVoiceOutputTo(peerId, audioEl);
 }
 
 function removeVoiceAudioElement(peerId) {
@@ -1121,8 +1201,12 @@ function removeScreenStreamTile(peerId) {
 
 function refreshStageVisibility() {
   const count = state.screenStreams.size;
-  dom.emptyStage.classList.toggle('hidden', count > 0);
-  dom.streamsGrid.classList.toggle('hidden', count === 0);
+  // A praça aparece quando ninguém transmite ou quando você a escolhe no topo
+  const showWorld = count === 0 || state.layoutMode === 'world';
+  dom.worldStage.classList.toggle('hidden', !showWorld);
+  dom.streamsGrid.classList.toggle('hidden', showWorld);
+  dom.stageArea.classList.toggle('showing-streams', !showWorld);
+  worldSetVisible(showWorld && !dom.appScreen.classList.contains('hidden'));
 
   // Atualiza destaque se estivermos no modo spotlight
   const tiles = dom.streamsGrid.querySelectorAll('.stream-tile');
@@ -1142,6 +1226,7 @@ function setLayoutMode(mode) {
   dom.streamsGrid.classList.toggle('mode-spotlight', mode === 'spotlight');
   dom.btnLayoutGrid.classList.toggle('active', mode === 'grid');
   dom.btnLayoutSpotlight.classList.toggle('active', mode === 'spotlight');
+  dom.btnLayoutWorld.classList.toggle('active', mode === 'world');
 
   if (mode === 'spotlight' && !state.spotlightPeerId && state.screenStreams.size > 0) {
     state.spotlightPeerId = Array.from(state.screenStreams.keys())[0];
@@ -1152,22 +1237,86 @@ function setLayoutMode(mode) {
 // =========================================================
 // UI DA SALA, MEMBROS E CHAT
 // =========================================================
+// Cor estável por apelido, para avatar e nome no chat
+function avatarHue(name) {
+  let hash = 0;
+  const str = String(name || 'P');
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) % 360;
+  }
+  return hash;
+}
+
+function avatarBackground(name) {
+  const hue = avatarHue(name);
+  return `linear-gradient(135deg, hsl(${hue}, 62%, 46%), hsl(${(hue + 40) % 360}, 62%, 38%))`;
+}
+
+function initialsOf(name) {
+  return (String(name || 'P').trim() || 'P').slice(0, 2).toUpperCase();
+}
+
+const chatUi = { unread: 0, lastAuthor: null, lastTimestamp: 0 };
+
+function isChatOpen() {
+  return !dom.roomSidebar.classList.contains('hidden');
+}
+
+function setChatOpen(open) {
+  dom.roomSidebar.classList.toggle('hidden', !open);
+  dom.btnChannelChat.classList.toggle('active', open);
+  dom.btnToggleSidebar.classList.toggle('active', open);
+  if (open) {
+    chatUi.unread = 0;
+    dom.chatUnread.classList.add('hidden');
+    dom.topbarUnread.classList.add('hidden');
+    dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+  }
+}
+
+function markChatUnread() {
+  if (isChatOpen()) return;
+  chatUi.unread += 1;
+  dom.chatUnread.textContent = chatUi.unread > 99 ? '99+' : String(chatUi.unread);
+  dom.chatUnread.classList.remove('hidden');
+  dom.topbarUnread.classList.remove('hidden');
+}
+
+function setDrawerOpen(open) {
+  dom.appScreen.classList.toggle('drawer-open', open);
+}
+
 function enterRoomUI() {
   dom.lobbyScreen.classList.add('hidden');
   dom.appScreen.classList.remove('hidden');
   dom.displayRoomCode.textContent = state.roomCode;
-  dom.networkRoleBadge.textContent = state.isHost ? 'Host da Sala' : 'Convidado';
+  dom.networkRoleBadge.textContent = state.isHost ? 'Host' : 'Convidado';
 
-  // Em telas menores/celulares, inicia com a barra lateral recolhida para focar no vídeo
-  if (window.innerWidth <= 900) {
-    dom.roomSidebar.classList.add('hidden');
-  }
+  // Nome, cor e ícone da sala no trilho, mais as salas recentes
+  applyRoomIdentity();
+
+  // Painel do usuário
+  dom.userPanelName.textContent = state.myUsername;
+  updateUserPanelAvatar();
+
+  // Em telas menores/celulares, inicia com o chat recolhido para focar no vídeo
+  setChatOpen(window.innerWidth > 1180);
 
   // Atualiza URL sem recarregar para facilitar compartilhamento
   const newUrl = `${window.location.pathname}?room=${encodeURIComponent(state.roomCode)}`;
   window.history.replaceState({}, '', newUrl);
 
   renderMembersList();
+  refreshStageVisibility();
+}
+
+// O rosto do avatar (cabeça e ombros) no painel do usuário
+function updateUserPanelAvatar() {
+  const av = sanitizeAvatar(state.myAvatar, state.myUsername);
+  dom.userPanelAvatar.firstChild.textContent = '';
+  dom.userPanelAvatar.classList.add('head');
+  dom.userPanelAvatar.style.background = '';
+  dom.userPanelAvatar.style.backgroundImage = `url(${avatarHeadUrl(av)})`;
 }
 
 function renderMembersList() {
@@ -1176,42 +1325,80 @@ function renderMembersList() {
   dom.membersCount.textContent = total;
   dom.peerCountBadge.textContent = total;
 
-  state.members.forEach((m) => {
-    const li = document.createElement('li');
-    li.className = 'member-item';
+  // Quem está ao vivo aparece primeiro; depois quem está com microfone; você sempre no topo do seu grupo
+  const rank = (m) => (m.isStreaming ? 0 : m.hasMic ? 1 : 2);
+  const sorted = Array.from(state.members.values()).sort((a, b) => rank(a) - rank(b));
 
-    const initials = (m.username || 'P').slice(0, 2).toUpperCase();
+  sorted.forEach((m) => {
+    const li = document.createElement('li');
     const isMe = m.peerId === state.myPeerId;
+    const isRoomHost = m.peerId === state.hostPeerId;
+    li.className = `member-item${m.isStreaming ? ' live' : ''}${m.hasMic ? ' mic' : ''}${voiceIsSpeaking(m.peerId) ? ' speaking' : ''}`;
+    li.dataset.peerId = m.peerId;
+
+    const sub = m.isStreaming ? 'Transmitindo ao vivo' : m.hasMic ? 'No canal de voz' : 'Assistindo';
 
     li.innerHTML = `
-      <div class="member-info">
-        <div class="member-avatar">${initials}</div>
-        <span class="member-name">${escapeHtml(m.username)}${isMe ? ' (Você)' : ''}</span>
+      <div class="member-avatar head" style="background-image: url(${avatarHeadUrl(sanitizeAvatar(m.avatar, m.username))})"></div>
+      <div class="member-text">
+        <span class="member-name">${escapeHtml(m.username)}${isMe ? ' (Você)' : ''}${isRoomHost ? ' 👑' : ''}</span>
+        <span class="member-sub">${sub}</span>
       </div>
       <div class="member-badges">
-        ${m.hasMic ? '<span title="Microfone Ativo">🎙️</span>' : ''}
+        ${voiceMemberBadges(m)}
         ${m.isStreaming ? '<span class="badge-streaming">LIVE</span>' : ''}
       </div>
     `;
     dom.membersList.appendChild(li);
+
+    // Amigos: clique abre o volume individual
+    if (!isMe) {
+      voiceDecorateMember(li, m);
+    }
+
+    if (isMe) {
+      const role = state.isHost ? 'Host da sala' : 'Convidado';
+      dom.userPanelStatus.textContent = m.isStreaming ? 'Ao vivo agora' : role;
+    }
   });
 }
 
 function appendChatMessage(author, text, timestamp) {
+  const ts = timestamp || Date.now();
   const div = document.createElement('div');
-  div.className = 'chat-msg';
-  const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString([], {
+  const timeStr = new Date(ts).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit'
   });
 
-  div.innerHTML = `
-    <span class="chat-msg-time">${timeStr}</span>
-    <span class="chat-msg-author">${escapeHtml(author)}:</span>
-    <span class="chat-msg-text">${escapeHtml(text)}</span>
-  `;
+  // Mensagens seguidas do mesmo autor (até 5 min) ficam agrupadas sob o mesmo cabeçalho
+  const grouped = chatUi.lastAuthor === author && Math.abs(ts - chatUi.lastTimestamp) < 5 * 60 * 1000;
+  chatUi.lastAuthor = author;
+  chatUi.lastTimestamp = ts;
+
+  if (grouped) {
+    div.className = 'chat-msg grouped';
+    div.title = timeStr;
+    div.innerHTML = `<div class="chat-body"><div class="chat-msg-text">${escapeHtml(text)}</div></div>`;
+  } else {
+    div.className = 'chat-msg';
+    div.innerHTML = `
+      <div class="chat-avatar" style="background: ${avatarBackground(author)}">${escapeHtml(initialsOf(author))}</div>
+      <div class="chat-body">
+        <div class="chat-meta">
+          <span class="chat-msg-author" style="color: hsl(${avatarHue(author)}, 80%, 74%)">${escapeHtml(author)}</span>
+          <span class="chat-msg-time">${timeStr}</span>
+        </div>
+        <div class="chat-msg-text">${escapeHtml(text)}</div>
+      </div>
+    `;
+  }
   dom.chatMessages.appendChild(div);
   dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+
+  if (author !== state.myUsername) {
+    markChatUnread();
+  }
 }
 
 function addSystemMessage(text) {
@@ -1220,6 +1407,7 @@ function addSystemMessage(text) {
   div.textContent = text;
   dom.chatMessages.appendChild(div);
   dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+  chatUi.lastAuthor = null;
 }
 
 function escapeHtml(str) {
@@ -1230,24 +1418,21 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function setStreamMenuOpen(open) {
+  dom.streamMenu.classList.toggle('hidden', !open);
+  dom.btnToggleStream.setAttribute('aria-expanded', String(open));
+}
+
 function updateStreamControlsUI(isStreaming) {
   dom.btnToggleStream.classList.toggle('active-stream', isStreaming);
-  dom.streamBtnLabel.textContent = isStreaming
-    ? 'Parar Transmissão'
-    : 'Transmitir Meu Jogo / Tela';
+  dom.streamBtnLabel.textContent = isStreaming ? 'Parar transmissão' : 'Transmitir';
+  if (isStreaming) setStreamMenuOpen(false);
 
   dom.btnToggleSelfPreview.classList.toggle('hidden', !isStreaming);
   if (!isStreaming) {
     state.gpuSaverSelfPreview = true;
     dom.selfPreviewLabel.textContent = 'Eco de GPU: Ativado (+FPS)';
   }
-}
-
-function updateMicControlsUI(isActive) {
-  dom.btnToggleMic.classList.toggle('mic-active', isActive);
-  dom.iconMicOff.classList.toggle('hidden', isActive);
-  dom.iconMicOn.classList.toggle('hidden', !isActive);
-  dom.micBtnLabel.textContent = isActive ? 'Mic Ativo' : 'Mic Desativado';
 }
 
 // =========================================================
@@ -1265,16 +1450,23 @@ function bindRoomEvents() {
     showToast('Link direto da sala copiado!');
   });
 
+  // Botão flutuante: parado abre o menu de escolhas; transmitindo, encerra
   dom.btnToggleStream.addEventListener('click', () => {
     if (state.localScreenStream) {
       stopScreenShare();
     } else {
-      startScreenShare();
+      setStreamMenuOpen(dom.streamMenu.classList.contains('hidden'));
     }
   });
-
-  dom.btnEmptyStartStream.addEventListener('click', () => {
+  dom.btnMenuShare.addEventListener('click', () => {
+    setStreamMenuOpen(false);
     startScreenShare();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.stage-fab')) setStreamMenuOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setStreamMenuOpen(false);
   });
 
   const handleManualReconnect = () => {
@@ -1284,13 +1476,6 @@ function bindRoomEvents() {
   if (dom.btnReconnectStreams) {
     dom.btnReconnectStreams.addEventListener('click', handleManualReconnect);
   }
-  if (dom.btnEmptyReconnect) {
-    dom.btnEmptyReconnect.addEventListener('click', handleManualReconnect);
-  }
-
-  dom.btnToggleMic.addEventListener('click', () => {
-    toggleMicrophone();
-  });
 
   // Desliga/liga completamente o decodificador local para poupar GPU e não perder FPS no jogo
   dom.btnToggleSelfPreview.addEventListener('click', () => {
@@ -1317,9 +1502,39 @@ function bindRoomEvents() {
 
   dom.btnLayoutGrid.addEventListener('click', () => setLayoutMode('grid'));
   dom.btnLayoutSpotlight.addEventListener('click', () => setLayoutMode('spotlight'));
+  dom.btnLayoutWorld.addEventListener('click', () => setLayoutMode('world'));
 
-  dom.btnToggleSidebar.addEventListener('click', () => {
-    dom.roomSidebar.classList.toggle('hidden');
+  // Chat: abre/fecha pelo canal de texto, pelo botão do topo ou pelo X do painel
+  const toggleChat = () => {
+    setChatOpen(!isChatOpen());
+    setDrawerOpen(false);
+  };
+  dom.btnToggleSidebar.addEventListener('click', toggleChat);
+  dom.btnChannelChat.addEventListener('click', toggleChat);
+  dom.btnCloseChat.addEventListener('click', () => setChatOpen(false));
+
+  // Gaveta de canais no celular
+  dom.btnToggleChannels.addEventListener('click', () => {
+    setDrawerOpen(!dom.appScreen.classList.contains('drawer-open'));
+  });
+  dom.drawerBackdrop.addEventListener('click', () => setDrawerOpen(false));
+
+  // Painel do usuário: microfone e qualidade da transmissão
+  dom.btnUserMic.addEventListener('click', () => {
+    toggleMicrophone();
+  });
+  dom.btnOpenSettings.addEventListener('click', () => {
+    openVoiceSettings();
+    setDrawerOpen(false);
+  });
+  dom.btnCloseSettings.addEventListener('click', closeVoiceSettings);
+  dom.settingsModal.addEventListener('click', (e) => {
+    if (e.target === dom.settingsModal) closeVoiceSettings();
+  });
+
+  // "+" do trilho: abre o lobby em outra aba, sem derrubar a sala atual
+  dom.btnRailNewRoom.addEventListener('click', () => {
+    window.open(window.location.pathname, '_blank', 'noopener');
   });
 
   dom.selectBitrate.addEventListener('change', updateLiveStreamParameters);
@@ -1333,36 +1548,27 @@ function bindRoomEvents() {
 
     const timestamp = Date.now();
     appendChatMessage(state.myUsername, text, timestamp);
+    worldBubble(state.myPeerId, text);
     broadcastData({
       type: 'CHAT',
+      peerId: state.myPeerId,
       username: state.myUsername,
       text,
       timestamp
     });
   });
 
-  dom.btnLeaveRoom.addEventListener('click', () => {
-    stopScreenShare();
-    if (state.localVoiceStream) {
-      state.localVoiceStream.getTracks().forEach((t) => t.stop());
-    }
-    if (state.myPeer) {
-      state.myPeer.destroy();
-    }
-    window.location.href = window.location.pathname;
-  });
+  dom.btnLeaveRoom.addEventListener('click', () => leaveRoom());
 
   // Eventos do Modal PS5 / PSN
   const openPs5Modal = () => {
+    setStreamMenuOpen(false);
     dom.ps5Modal.classList.remove('hidden');
     populateCaptureDevices();
   };
 
   if (dom.btnOpenPs5Modal) {
     dom.btnOpenPs5Modal.addEventListener('click', openPs5Modal);
-  }
-  if (dom.btnEmptyPs5) {
-    dom.btnEmptyPs5.addEventListener('click', openPs5Modal);
   }
   if (dom.btnClosePs5Modal) {
     dom.btnClosePs5Modal.addEventListener('click', () => {
@@ -1425,9 +1631,6 @@ function bindRoomEvents() {
 
   if (dom.btnOpenDiagModal) {
     dom.btnOpenDiagModal.addEventListener('click', openAndRunDiag);
-  }
-  if (dom.btnEmptyDiag) {
-    dom.btnEmptyDiag.addEventListener('click', openAndRunDiag);
   }
   if (dom.btnCloseDiagModal) {
     dom.btnCloseDiagModal.addEventListener('click', () => {
@@ -2118,6 +2321,10 @@ async function startPs5CaptureCardStream() {
 
 // Inicializa tudo ao carregar a página
 document.addEventListener('DOMContentLoaded', () => {
+  initAvatar();
+  initWorld();
+  initRooms();
   initLobby();
   bindRoomEvents();
+  initVoice();
 });
