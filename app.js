@@ -30,7 +30,7 @@ const state = {
   isHost: false,
   hostPeerId: '',
 
-  // Mapa de participantes: peerId -> { peerId, username, isStreaming, hasMic }
+  // Mapa de participantes: peerId -> { peerId, username, isStreaming, hasMic, micMuted, deafened }
   members: new Map(),
 
   // Conexões de Dados (DataConnection): peerId -> conn
@@ -41,6 +41,9 @@ const state = {
 
   // Chamadas de Vídeo/Tela recebidas por mim: peerId -> MediaConnection
   incomingScreenCalls: new Map(),
+
+  // Chamadas de Voz recebidas por mim: peerId -> MediaConnection (usadas para detectar quem está falando)
+  incomingVoiceCalls: new Map(),
 
   // Chamadas de Voz enviadas por mim: peerId -> MediaConnection
   outgoingVoiceCalls: new Map(),
@@ -340,7 +343,9 @@ function setupDataConnection(conn, isInitialHostConn = false) {
       peerId: state.myPeerId,
       username: state.myUsername,
       isStreaming: Boolean(state.localScreenStream),
-      hasMic: Boolean(state.localVoiceStream)
+      hasMic: Boolean(state.localVoiceStream),
+      micMuted: voice.muted,
+      deafened: voice.deafened
     });
   });
 
@@ -367,7 +372,9 @@ function handleSignalingData(conn, data) {
         peerId: data.peerId,
         username: data.username || 'Amigo',
         isStreaming: Boolean(data.isStreaming),
-        hasMic: Boolean(data.hasMic)
+        hasMic: Boolean(data.hasMic),
+        micMuted: Boolean(data.micMuted),
+        deafened: Boolean(data.deafened)
       });
 
       if (isNew) {
@@ -444,6 +451,8 @@ function handleSignalingData(conn, data) {
       if (member) {
         member.isStreaming = Boolean(data.isStreaming);
         member.hasMic = Boolean(data.hasMic);
+        member.micMuted = Boolean(data.micMuted);
+        member.deafened = Boolean(data.deafened);
         if (!member.isStreaming) {
           removeScreenStreamTile(data.peerId);
         }
@@ -504,6 +513,8 @@ function broadcastMyState() {
   if (me) {
     me.isStreaming = Boolean(state.localScreenStream);
     me.hasMic = Boolean(state.localVoiceStream);
+    me.micMuted = voice.muted;
+    me.deafened = voice.deafened;
   }
   renderMembersList();
 
@@ -511,7 +522,9 @@ function broadcastMyState() {
     type: 'MEMBER_STATE',
     peerId: state.myPeerId,
     isStreaming: Boolean(state.localScreenStream),
-    hasMic: Boolean(state.localVoiceStream)
+    hasMic: Boolean(state.localVoiceStream),
+    micMuted: voice.muted,
+    deafened: voice.deafened
   });
 }
 
@@ -525,6 +538,7 @@ function handlePeerDisconnect(peerId) {
   state.dataConns.delete(peerId);
   state.outgoingScreenCalls.delete(peerId);
   state.outgoingVoiceCalls.delete(peerId);
+  state.incomingVoiceCalls.delete(peerId);
 
   removeScreenStreamTile(peerId);
   removeVoiceAudioElement(peerId);
@@ -766,40 +780,10 @@ function updateLiveStreamParameters() {
 // =========================================================
 // MICROFONE / CHAT DE VOZ P2P
 // =========================================================
-async function toggleMicrophone() {
-  if (state.localVoiceStream) {
-    state.localVoiceStream.getTracks().forEach((t) => t.stop());
-    state.localVoiceStream = null;
-    state.outgoingVoiceCalls.forEach((c) => c.close());
-    state.outgoingVoiceCalls.clear();
-    updateMicControlsUI(false);
-    broadcastMyState();
-    showToast('Microfone desativado.');
-    return;
-  }
-
-  try {
-    const voiceStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: false
-    });
-
-    state.localVoiceStream = voiceStream;
-    state.dataConns.forEach((_, peerId) => {
-      callPeerWithVoice(peerId);
-    });
-
-    updateMicControlsUI(true);
-    broadcastMyState();
-    showToast('Microfone ativado!');
-  } catch (err) {
-    console.error('Erro ao acessar microfone:', err);
-    showToast('Permissão de microfone negada ou dispositivo indisponível.');
-  }
+// A captura, o mudo e as configurações de voz ficam em voice.js.
+// Fora da voz este botão entra no canal; dentro, alterna o mudo sem derrubar a chamada.
+function toggleMicrophone() {
+  toggleMute();
 }
 
 function callPeerWithVoice(targetPeerId) {
@@ -823,6 +807,8 @@ function handleIncomingCall(call) {
 
   if (streamType === 'screen') {
     state.incomingScreenCalls.set(call.peer, call);
+  } else if (streamType === 'voice') {
+    state.incomingVoiceCalls.set(call.peer, call);
   }
 
   const fallbackMediaStream = new MediaStream();
@@ -869,6 +855,9 @@ function handleIncomingCall(call) {
 
   call.on('close', () => {
     if (streamType === 'voice') {
+      if (state.incomingVoiceCalls.get(call.peer) === call) {
+        state.incomingVoiceCalls.delete(call.peer);
+      }
       removeVoiceAudioElement(call.peer);
     } else {
       // Só remove o bloco de vídeo se esta chamada ainda for a chamada ativa daquele peer
@@ -893,6 +882,8 @@ function attachVoiceStream(peerId, stream) {
     dom.voiceAudioContainer.appendChild(audioEl);
   }
   audioEl.srcObject = remoteStreamOrClone(stream);
+  // Volume geral, volume desta pessoa, ensurdecer e dispositivo de saída
+  applyVoiceOutputTo(peerId, audioEl);
 }
 
 function removeVoiceAudioElement(peerId) {
@@ -1252,9 +1243,6 @@ function renderMembersList() {
   dom.membersCount.textContent = total;
   dom.peerCountBadge.textContent = total;
 
-  const micIcon =
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><title>Microfone ativo</title><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>';
-
   // Quem está ao vivo aparece primeiro; depois quem está com microfone; você sempre no topo do seu grupo
   const rank = (m) => (m.isStreaming ? 0 : m.hasMic ? 1 : 2);
   const sorted = Array.from(state.members.values()).sort((a, b) => rank(a) - rank(b));
@@ -1263,7 +1251,8 @@ function renderMembersList() {
     const li = document.createElement('li');
     const isMe = m.peerId === state.myPeerId;
     const isRoomHost = m.peerId === state.hostPeerId;
-    li.className = `member-item${m.isStreaming ? ' live' : ''}${m.hasMic ? ' mic' : ''}`;
+    li.className = `member-item${m.isStreaming ? ' live' : ''}${m.hasMic ? ' mic' : ''}${voiceIsSpeaking(m.peerId) ? ' speaking' : ''}`;
+    li.dataset.peerId = m.peerId;
 
     const sub = m.isStreaming ? 'Transmitindo ao vivo' : m.hasMic ? 'No canal de voz' : 'Assistindo';
 
@@ -1274,11 +1263,16 @@ function renderMembersList() {
         <span class="member-sub">${sub}</span>
       </div>
       <div class="member-badges">
-        ${m.hasMic ? micIcon : ''}
+        ${voiceMemberBadges(m)}
         ${m.isStreaming ? '<span class="badge-streaming">LIVE</span>' : ''}
       </div>
     `;
     dom.membersList.appendChild(li);
+
+    // Amigos: clique abre o volume individual
+    if (!isMe) {
+      voiceDecorateMember(li, m);
+    }
 
     if (isMe) {
       const role = state.isHost ? 'Host da sala' : 'Convidado';
@@ -1353,15 +1347,6 @@ function updateStreamControlsUI(isStreaming) {
     state.gpuSaverSelfPreview = true;
     dom.selfPreviewLabel.textContent = 'Eco de GPU: Ativado (+FPS)';
   }
-}
-
-function updateMicControlsUI(isActive) {
-  dom.btnToggleMic.classList.toggle('mic-active', isActive);
-  dom.iconMicOff.classList.toggle('hidden', isActive);
-  dom.iconMicOn.classList.toggle('hidden', !isActive);
-  dom.micBtnLabel.textContent = isActive ? 'Mic Ativo' : 'Mic Desativado';
-  dom.btnUserMic.classList.toggle('mic-active', isActive);
-  dom.btnUserMic.title = isActive ? 'Desativar microfone' : 'Ativar microfone';
 }
 
 // =========================================================
@@ -1452,14 +1437,12 @@ function bindRoomEvents() {
     toggleMicrophone();
   });
   dom.btnOpenSettings.addEventListener('click', () => {
-    dom.settingsModal.classList.remove('hidden');
+    openVoiceSettings();
     setDrawerOpen(false);
   });
-  dom.btnCloseSettings.addEventListener('click', () => {
-    dom.settingsModal.classList.add('hidden');
-  });
+  dom.btnCloseSettings.addEventListener('click', closeVoiceSettings);
   dom.settingsModal.addEventListener('click', (e) => {
-    if (e.target === dom.settingsModal) dom.settingsModal.classList.add('hidden');
+    if (e.target === dom.settingsModal) closeVoiceSettings();
   });
 
   // "+" do trilho: abre o lobby em outra aba, sem derrubar a sala atual
@@ -1488,9 +1471,7 @@ function bindRoomEvents() {
 
   dom.btnLeaveRoom.addEventListener('click', () => {
     stopScreenShare();
-    if (state.localVoiceStream) {
-      state.localVoiceStream.getTracks().forEach((t) => t.stop());
-    }
+    releaseRawStream();
     if (state.myPeer) {
       state.myPeer.destroy();
     }
@@ -2265,4 +2246,5 @@ async function startPs5CaptureCardStream() {
 document.addEventListener('DOMContentLoaded', () => {
   initLobby();
   bindRoomEvents();
+  initVoice();
 });

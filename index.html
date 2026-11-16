@@ -136,6 +136,13 @@
       <header class="channels-header">
         <span id="room-title-name" class="room-title">Sala</span>
         <span id="network-role-badge" class="role-badge">Host</span>
+        <button id="btn-leave-room" class="panel-btn danger header-leave" type="button" title="Sair da sala">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
       </header>
 
       <div class="channels-scroll">
@@ -184,6 +191,22 @@
         <ul id="members-list" class="members-list"></ul>
       </div>
 
+      <div id="voice-strip" class="voice-strip hidden">
+        <div class="voice-strip-text">
+          <span class="voice-strip-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M2 20h.01"></path><path d="M7 20v-4"></path><path d="M12 20v-8"></path><path d="M17 20V8"></path><path d="M22 4v16"></path></svg>
+            Voz conectada
+          </span>
+          <span id="voice-strip-detail" class="voice-strip-detail">Arena de Lives</span>
+        </div>
+        <button id="btn-leave-voice" class="panel-btn danger" type="button" title="Sair da voz (continua na sala)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path>
+            <line x1="23" y1="1" x2="1" y2="23"></line>
+          </svg>
+        </button>
+      </div>
+
       <div class="connection-indicator">
         <span id="conn-dot" class="status-dot online"></span>
         <span id="conn-text">Conectado</span>
@@ -211,17 +234,22 @@
             <line x1="8" y1="23" x2="16" y2="23"></line>
           </svg>
         </button>
-        <button id="btn-open-settings" class="panel-btn" type="button" title="Qualidade da transmissão">
+        <button id="btn-user-deafen" class="panel-btn" type="button" title="Ensurdecer (parar de ouvir as vozes)">
+          <svg class="deafen-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+            <path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"></path>
+          </svg>
+          <svg class="deafen-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18v-6a9 9 0 0 1 14.5-7.1"></path>
+            <path d="M21 12v6"></path>
+            <path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"></path>
+            <line x1="2" y1="2" x2="22" y2="22"></line>
+          </svg>
+        </button>
+        <button id="btn-open-settings" class="panel-btn" type="button" title="Configurações de voz e transmissão">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-          </svg>
-        </button>
-        <button id="btn-leave-room" class="panel-btn danger" type="button" title="Sair da sala">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
           </svg>
         </button>
       </div>
@@ -411,20 +439,91 @@
     </div>
   </div>
 
-  <!-- MODAL DE QUALIDADE DA TRANSMISSÃO -->
+  <!-- MODAL DE CONFIGURAÇÕES (VOZ + TRANSMISSÃO) -->
   <div id="settings-modal" class="modal-overlay hidden">
     <div class="modal-card settings-modal-card">
       <div class="modal-header">
         <div class="modal-title-group">
           <div class="settings-badge-icon">⚙️</div>
           <div>
-            <h3>Qualidade da Transmissão</h3>
-            <p>Vale para a sua próxima live; bitrate e encoder mudam na hora</p>
+            <h3>Configurações</h3>
+            <p>Ficam salvas neste navegador</p>
           </div>
         </div>
         <button id="btn-close-settings" class="icon-btn" type="button" title="Fechar">✕</button>
       </div>
-      <div class="settings-grid">
+
+      <div class="settings-tabs">
+        <button id="tab-settings-voice" class="settings-tab active" type="button">Voz</button>
+        <button id="tab-settings-stream" class="settings-tab" type="button">Transmissão</button>
+      </div>
+
+      <div id="panel-settings-voice" class="settings-grid">
+        <div class="settings-two-col">
+          <div class="setting-item">
+            <label for="select-voice-input">Dispositivo de entrada</label>
+            <select id="select-voice-input"><option value="default">Padrão do sistema</option></select>
+            <small id="voice-input-hint" class="hint"></small>
+          </div>
+          <div class="setting-item">
+            <label for="select-voice-output">Dispositivo de saída</label>
+            <select id="select-voice-output"><option value="default">Padrão do sistema</option></select>
+            <small id="voice-output-hint" class="hint"></small>
+          </div>
+        </div>
+
+        <div class="settings-two-col">
+          <div class="setting-item">
+            <label for="range-voice-input">Volume de entrada <span id="range-voice-input-value" class="setting-value">100%</span></label>
+            <input type="range" id="range-voice-input" class="voice-range" min="0" max="200" step="1" value="100" />
+          </div>
+          <div class="setting-item">
+            <label for="range-voice-output">Volume de saída <span id="range-voice-output-value" class="setting-value">100%</span></label>
+            <input type="range" id="range-voice-output" class="voice-range" min="0" max="100" step="1" value="100" />
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Teste de microfone</label>
+          <div class="voice-test-row">
+            <button id="btn-voice-test" class="primary-btn voice-test-btn" type="button">Testar microfone</button>
+            <div class="voice-meter" title="Nível do microfone">
+              <div id="voice-meter-fill" class="voice-meter-fill"></div>
+            </div>
+          </div>
+          <small id="voice-test-hint" class="hint"></small>
+        </div>
+
+        <div class="setting-item">
+          <label>Modo de entrada</label>
+          <div class="voice-mode-switch">
+            <button id="btn-voice-mode-vad" class="voice-mode-btn active" type="button">Detecção de voz</button>
+            <button id="btn-voice-mode-ptt" class="voice-mode-btn" type="button">Apertar para falar</button>
+          </div>
+          <div id="voice-vad-box" class="voice-mode-box">
+            <label for="range-voice-sensitivity">Sensibilidade <span id="voice-sensitivity-value" class="setting-value">-50 dB</span></label>
+            <input type="range" id="range-voice-sensitivity" class="voice-range" min="-80" max="0" step="1" value="-50" />
+            <small class="hint">O microfone abre quando o nível passa deste ponto. A régua tem a mesma escala do medidor acima: deixe o marcador logo depois do ruído de fundo.</small>
+          </div>
+          <div id="voice-ptt-box" class="voice-mode-box hidden">
+            <div class="voice-ptt-row">
+              <span>Tecla para falar</span>
+              <button id="btn-voice-ptt-key" class="chip-btn accent big" type="button">V</button>
+            </div>
+            <small class="hint">Funciona com a janela do AzogStream em foco. Com o jogo em tela cheia na frente, o navegador não recebe a tecla: nesse caso use a detecção de voz.</small>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>Processamento de voz</label>
+          <label class="voice-toggle"><input type="checkbox" id="check-voice-echo" checked /><span class="voice-toggle-track"></span><span>Cancelamento de eco</span></label>
+          <label class="voice-toggle"><input type="checkbox" id="check-voice-noise" checked /><span class="voice-toggle-track"></span><span>Supressão de ruído</span></label>
+          <label class="voice-toggle"><input type="checkbox" id="check-voice-agc" checked /><span class="voice-toggle-track"></span><span>Controle automático de ganho</span></label>
+        </div>
+      </div>
+
+      <div id="panel-settings-stream" class="settings-grid hidden">
+        <p class="settings-note">Resolução e quadros valem para a sua próxima live; bitrate e encoder mudam na hora.</p>
         <div class="setting-item">
           <label for="select-resolution">Resolução</label>
           <select id="select-resolution" title="Resolução da captura (720p usa muito menos CPU/GPU)">
@@ -562,5 +661,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <script src="app.js"></script>
+  <script src="voice.js"></script>
 </body>
 </html>
