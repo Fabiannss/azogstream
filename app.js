@@ -144,6 +144,24 @@ const dom = {
   btnCopyDiag: document.getElementById('btn-copy-diag'),
   btnSendDiagChat: document.getElementById('btn-send-diag-chat'),
 
+  // Layout de comunidade (trilho, canais, painel do usuário, chat)
+  railRoomIcon: document.getElementById('rail-room-icon'),
+  btnRailNewRoom: document.getElementById('btn-rail-new-room'),
+  roomTitleName: document.getElementById('room-title-name'),
+  btnChannelChat: document.getElementById('btn-channel-chat'),
+  chatUnread: document.getElementById('chat-unread'),
+  topbarUnread: document.getElementById('topbar-unread'),
+  btnCloseChat: document.getElementById('btn-close-chat'),
+  userPanelAvatar: document.getElementById('user-panel-avatar'),
+  userPanelName: document.getElementById('user-panel-name'),
+  userPanelStatus: document.getElementById('user-panel-status'),
+  btnUserMic: document.getElementById('btn-user-mic'),
+  btnOpenSettings: document.getElementById('btn-open-settings'),
+  settingsModal: document.getElementById('settings-modal'),
+  btnCloseSettings: document.getElementById('btn-close-settings'),
+  btnToggleChannels: document.getElementById('btn-toggle-channels'),
+  drawerBackdrop: document.getElementById('drawer-backdrop'),
+
   voiceAudioContainer: document.getElementById('voice-audio-container'),
   toastContainer: document.getElementById('toast-container')
 };
@@ -1152,16 +1170,74 @@ function setLayoutMode(mode) {
 // =========================================================
 // UI DA SALA, MEMBROS E CHAT
 // =========================================================
+// Cor estável por apelido, para avatar e nome no chat
+function avatarHue(name) {
+  let hash = 0;
+  const str = String(name || 'P');
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) % 360;
+  }
+  return hash;
+}
+
+function avatarBackground(name) {
+  const hue = avatarHue(name);
+  return `linear-gradient(135deg, hsl(${hue}, 62%, 46%), hsl(${(hue + 40) % 360}, 62%, 38%))`;
+}
+
+function initialsOf(name) {
+  return (String(name || 'P').trim() || 'P').slice(0, 2).toUpperCase();
+}
+
+const chatUi = { unread: 0, lastAuthor: null, lastTimestamp: 0 };
+
+function isChatOpen() {
+  return !dom.roomSidebar.classList.contains('hidden');
+}
+
+function setChatOpen(open) {
+  dom.roomSidebar.classList.toggle('hidden', !open);
+  dom.btnChannelChat.classList.toggle('active', open);
+  dom.btnToggleSidebar.classList.toggle('active', open);
+  if (open) {
+    chatUi.unread = 0;
+    dom.chatUnread.classList.add('hidden');
+    dom.topbarUnread.classList.add('hidden');
+    dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+  }
+}
+
+function markChatUnread() {
+  if (isChatOpen()) return;
+  chatUi.unread += 1;
+  dom.chatUnread.textContent = chatUi.unread > 99 ? '99+' : String(chatUi.unread);
+  dom.chatUnread.classList.remove('hidden');
+  dom.topbarUnread.classList.remove('hidden');
+}
+
+function setDrawerOpen(open) {
+  dom.appScreen.classList.toggle('drawer-open', open);
+}
+
 function enterRoomUI() {
   dom.lobbyScreen.classList.add('hidden');
   dom.appScreen.classList.remove('hidden');
   dom.displayRoomCode.textContent = state.roomCode;
-  dom.networkRoleBadge.textContent = state.isHost ? 'Host da Sala' : 'Convidado';
+  dom.networkRoleBadge.textContent = state.isHost ? 'Host' : 'Convidado';
 
-  // Em telas menores/celulares, inicia com a barra lateral recolhida para focar no vídeo
-  if (window.innerWidth <= 900) {
-    dom.roomSidebar.classList.add('hidden');
-  }
+  // Identidade da sala no trilho e no cabeçalho dos canais
+  dom.roomTitleName.textContent = state.roomCode;
+  dom.railRoomIcon.textContent = state.roomCode.replace(/[^A-Z0-9]/gi, '').slice(0, 2).toUpperCase() || '#';
+  dom.railRoomIcon.title = `Sala ${state.roomCode}`;
+  document.title = `${state.roomCode} — AzogStream`;
+
+  // Painel do usuário
+  dom.userPanelName.textContent = state.myUsername;
+  dom.userPanelAvatar.firstChild.textContent = initialsOf(state.myUsername);
+  dom.userPanelAvatar.style.background = avatarBackground(state.myUsername);
+
+  // Em telas menores/celulares, inicia com o chat recolhido para focar no vídeo
+  setChatOpen(window.innerWidth > 1180);
 
   // Atualiza URL sem recarregar para facilitar compartilhamento
   const newUrl = `${window.location.pathname}?room=${encodeURIComponent(state.roomCode)}`;
@@ -1176,42 +1252,77 @@ function renderMembersList() {
   dom.membersCount.textContent = total;
   dom.peerCountBadge.textContent = total;
 
-  state.members.forEach((m) => {
-    const li = document.createElement('li');
-    li.className = 'member-item';
+  const micIcon =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><title>Microfone ativo</title><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>';
 
-    const initials = (m.username || 'P').slice(0, 2).toUpperCase();
+  // Quem está ao vivo aparece primeiro; depois quem está com microfone; você sempre no topo do seu grupo
+  const rank = (m) => (m.isStreaming ? 0 : m.hasMic ? 1 : 2);
+  const sorted = Array.from(state.members.values()).sort((a, b) => rank(a) - rank(b));
+
+  sorted.forEach((m) => {
+    const li = document.createElement('li');
     const isMe = m.peerId === state.myPeerId;
+    const isRoomHost = m.peerId === state.hostPeerId;
+    li.className = `member-item${m.isStreaming ? ' live' : ''}${m.hasMic ? ' mic' : ''}`;
+
+    const sub = m.isStreaming ? 'Transmitindo ao vivo' : m.hasMic ? 'No canal de voz' : 'Assistindo';
 
     li.innerHTML = `
-      <div class="member-info">
-        <div class="member-avatar">${initials}</div>
-        <span class="member-name">${escapeHtml(m.username)}${isMe ? ' (Você)' : ''}</span>
+      <div class="member-avatar" style="background: ${avatarBackground(m.username)}">${escapeHtml(initialsOf(m.username))}</div>
+      <div class="member-text">
+        <span class="member-name">${escapeHtml(m.username)}${isMe ? ' (Você)' : ''}${isRoomHost ? ' 👑' : ''}</span>
+        <span class="member-sub">${sub}</span>
       </div>
       <div class="member-badges">
-        ${m.hasMic ? '<span title="Microfone Ativo">🎙️</span>' : ''}
+        ${m.hasMic ? micIcon : ''}
         ${m.isStreaming ? '<span class="badge-streaming">LIVE</span>' : ''}
       </div>
     `;
     dom.membersList.appendChild(li);
+
+    if (isMe) {
+      const role = state.isHost ? 'Host da sala' : 'Convidado';
+      dom.userPanelStatus.textContent = m.isStreaming ? 'Ao vivo agora' : role;
+    }
   });
 }
 
 function appendChatMessage(author, text, timestamp) {
+  const ts = timestamp || Date.now();
   const div = document.createElement('div');
-  div.className = 'chat-msg';
-  const timeStr = new Date(timestamp || Date.now()).toLocaleTimeString([], {
+  const timeStr = new Date(ts).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit'
   });
 
-  div.innerHTML = `
-    <span class="chat-msg-time">${timeStr}</span>
-    <span class="chat-msg-author">${escapeHtml(author)}:</span>
-    <span class="chat-msg-text">${escapeHtml(text)}</span>
-  `;
+  // Mensagens seguidas do mesmo autor (até 5 min) ficam agrupadas sob o mesmo cabeçalho
+  const grouped = chatUi.lastAuthor === author && Math.abs(ts - chatUi.lastTimestamp) < 5 * 60 * 1000;
+  chatUi.lastAuthor = author;
+  chatUi.lastTimestamp = ts;
+
+  if (grouped) {
+    div.className = 'chat-msg grouped';
+    div.title = timeStr;
+    div.innerHTML = `<div class="chat-body"><div class="chat-msg-text">${escapeHtml(text)}</div></div>`;
+  } else {
+    div.className = 'chat-msg';
+    div.innerHTML = `
+      <div class="chat-avatar" style="background: ${avatarBackground(author)}">${escapeHtml(initialsOf(author))}</div>
+      <div class="chat-body">
+        <div class="chat-meta">
+          <span class="chat-msg-author" style="color: hsl(${avatarHue(author)}, 80%, 74%)">${escapeHtml(author)}</span>
+          <span class="chat-msg-time">${timeStr}</span>
+        </div>
+        <div class="chat-msg-text">${escapeHtml(text)}</div>
+      </div>
+    `;
+  }
   dom.chatMessages.appendChild(div);
   dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+
+  if (author !== state.myUsername) {
+    markChatUnread();
+  }
 }
 
 function addSystemMessage(text) {
@@ -1220,6 +1331,7 @@ function addSystemMessage(text) {
   div.textContent = text;
   dom.chatMessages.appendChild(div);
   dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
+  chatUi.lastAuthor = null;
 }
 
 function escapeHtml(str) {
@@ -1248,6 +1360,8 @@ function updateMicControlsUI(isActive) {
   dom.iconMicOff.classList.toggle('hidden', isActive);
   dom.iconMicOn.classList.toggle('hidden', !isActive);
   dom.micBtnLabel.textContent = isActive ? 'Mic Ativo' : 'Mic Desativado';
+  dom.btnUserMic.classList.toggle('mic-active', isActive);
+  dom.btnUserMic.title = isActive ? 'Desativar microfone' : 'Ativar microfone';
 }
 
 // =========================================================
@@ -1318,8 +1432,39 @@ function bindRoomEvents() {
   dom.btnLayoutGrid.addEventListener('click', () => setLayoutMode('grid'));
   dom.btnLayoutSpotlight.addEventListener('click', () => setLayoutMode('spotlight'));
 
-  dom.btnToggleSidebar.addEventListener('click', () => {
-    dom.roomSidebar.classList.toggle('hidden');
+  // Chat: abre/fecha pelo canal de texto, pelo botão do topo ou pelo X do painel
+  const toggleChat = () => {
+    setChatOpen(!isChatOpen());
+    setDrawerOpen(false);
+  };
+  dom.btnToggleSidebar.addEventListener('click', toggleChat);
+  dom.btnChannelChat.addEventListener('click', toggleChat);
+  dom.btnCloseChat.addEventListener('click', () => setChatOpen(false));
+
+  // Gaveta de canais no celular
+  dom.btnToggleChannels.addEventListener('click', () => {
+    setDrawerOpen(!dom.appScreen.classList.contains('drawer-open'));
+  });
+  dom.drawerBackdrop.addEventListener('click', () => setDrawerOpen(false));
+
+  // Painel do usuário: microfone e qualidade da transmissão
+  dom.btnUserMic.addEventListener('click', () => {
+    toggleMicrophone();
+  });
+  dom.btnOpenSettings.addEventListener('click', () => {
+    dom.settingsModal.classList.remove('hidden');
+    setDrawerOpen(false);
+  });
+  dom.btnCloseSettings.addEventListener('click', () => {
+    dom.settingsModal.classList.add('hidden');
+  });
+  dom.settingsModal.addEventListener('click', (e) => {
+    if (e.target === dom.settingsModal) dom.settingsModal.classList.add('hidden');
+  });
+
+  // "+" do trilho: abre o lobby em outra aba, sem derrubar a sala atual
+  dom.btnRailNewRoom.addEventListener('click', () => {
+    window.open(window.location.pathname, '_blank', 'noopener');
   });
 
   dom.selectBitrate.addEventListener('change', updateLiveStreamParameters);
