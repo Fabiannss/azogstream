@@ -3018,3 +3018,15 @@ button.channel-item:hover {
     display: none;
   }
 }
+
+/* Celulares estreitos: barra do topo compacta */
+@media (max-width: 480px) {
+  .topbar { padding-left: 8px; padding-right: 8px; gap: 6px; }
+  .topbar-left, .topbar-right { gap: 6px; min-width: 0; }
+  .topbar-left { flex: 1; min-width: 0; }
+  .topbar-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .topbar-glyph { display: none; }
+  #btn-reconnect-streams { display: none; }
+  .layout-switcher button { padding-left: 8px; padding-right: 8px; }
+  .layout-switcher button span { display: none; }
+}
