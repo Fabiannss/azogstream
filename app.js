@@ -29,6 +29,10 @@ const state = {
   roomCode: '',
   isHost: false,
   hostPeerId: '',
+  roomName: '',
+  roomColor: '',
+  autoGo: false, // entrou por um atalho de "salas recentes"
+  myAvatar: null,
 
   // Mapa de participantes: peerId -> { peerId, username, isStreaming, hasMic, micMuted, deafened }
   members: new Map(),
@@ -59,7 +63,7 @@ const state = {
   localVoiceStream: null,
 
   // Preferências de UI (gpuSaverSelfPreview = true por padrão para não gastar GPU de quem está jogando)
-  layoutMode: 'grid', // 'grid' | 'spotlight'
+  layoutMode: 'grid', // 'grid' | 'spotlight' | 'world' (praça)
   spotlightPeerId: null,
   gpuSaverSelfPreview: true,
   statsIntervals: new Map()
@@ -94,13 +98,13 @@ const dom = {
   btnReconnectStreams: document.getElementById('btn-reconnect-streams'),
   btnLayoutGrid: document.getElementById('btn-layout-grid'),
   btnLayoutSpotlight: document.getElementById('btn-layout-spotlight'),
+  btnLayoutWorld: document.getElementById('btn-layout-world'),
   btnToggleSidebar: document.getElementById('btn-toggle-sidebar'),
   peerCountBadge: document.getElementById('peer-count-badge'),
 
   // Palco e Sidebar
-  emptyStage: document.getElementById('empty-stage'),
-  btnEmptyStartStream: document.getElementById('btn-empty-start-stream'),
-  btnEmptyReconnect: document.getElementById('btn-empty-reconnect'),
+  stageArea: document.getElementById('stage-area'),
+  worldStage: document.getElementById('world-stage'),
   streamsGrid: document.getElementById('streams-grid'),
   roomSidebar: document.getElementById('room-sidebar'),
   membersCount: document.getElementById('members-count'),
@@ -113,17 +117,14 @@ const dom = {
   // Dock Inferior
   btnToggleStream: document.getElementById('btn-toggle-stream'),
   streamBtnLabel: document.getElementById('stream-btn-label'),
-  btnToggleMic: document.getElementById('btn-toggle-mic'),
-  iconMicOff: document.getElementById('icon-mic-off'),
-  iconMicOn: document.getElementById('icon-mic-on'),
-  micBtnLabel: document.getElementById('mic-btn-label'),
+  streamMenu: document.getElementById('stream-menu'),
+  btnMenuShare: document.getElementById('btn-menu-share'),
   btnToggleSelfPreview: document.getElementById('btn-toggle-self-preview'),
   selfPreviewLabel: document.getElementById('self-preview-label'),
   btnLeaveRoom: document.getElementById('btn-leave-room'),
 
   // Modal PS5 / PSN
   btnOpenPs5Modal: document.getElementById('btn-open-ps5-modal'),
-  btnEmptyPs5: document.getElementById('btn-empty-ps5'),
   ps5Modal: document.getElementById('ps5-modal'),
   btnClosePs5Modal: document.getElementById('btn-close-ps5-modal'),
   ps5EmbedForm: document.getElementById('ps5-embed-form'),
@@ -135,7 +136,6 @@ const dom = {
 
   // Modal de Diagnóstico
   btnOpenDiagModal: document.getElementById('btn-open-diag-modal'),
-  btnEmptyDiag: document.getElementById('btn-empty-diag'),
   diagModal: document.getElementById('diag-modal'),
   btnCloseDiagModal: document.getElementById('btn-close-diag-modal'),
   diagStatusBanner: document.getElementById('diag-status-banner'),
@@ -231,14 +231,25 @@ function initLobby() {
   dom.btnCreateRoom.addEventListener('click', () => {
     const code = sanitizeCode(dom.createRoomCode.value);
     if (!code) return setLobbyStatus('Digite um código válido para a sala.', true);
-    startSession(code, true);
+    startSession(code, true, getCreateRoomMeta());
   });
 
   dom.btnJoinRoom.addEventListener('click', () => {
     const code = sanitizeCode(dom.joinRoomCode.value);
     if (!code) return setLobbyStatus('Digite o código da sala dos seus amigos.', true);
-    startSession(code, false);
+    const known = loadRecentRooms().find((r) => r.code === code);
+    startSession(code, false, known ? { name: known.name, color: known.color } : {});
   });
+
+  // Atalho das salas recentes (?room=CODIGO&go=host|guest): entra direto
+  const go = params.get('go');
+  if (urlRoom && (go === 'host' || go === 'guest')) {
+    const code = sanitizeCode(urlRoom);
+    setTimeout(() => {
+      const known = loadRecentRooms().find((r) => r.code === code);
+      startSession(code, go === 'host', { name: known && known.name, color: known && known.color, autoGo: true });
+    }, 0);
+  }
 }
 
 function switchLobbyTab(tab) {
@@ -253,7 +264,7 @@ function switchLobbyTab(tab) {
 // =========================================================
 // CONEXÃO PEERJS & TOPOLOGIA MESH DE SALA
 // =========================================================
-function startSession(roomCode, asHost) {
+function startSession(roomCode, asHost, meta = {}) {
   const username = dom.usernameInput.value.trim() || 'Player';
   localStorage.setItem('gamestream_username', username);
 
@@ -261,6 +272,15 @@ function startSession(roomCode, asHost) {
   state.roomCode = roomCode;
   state.isHost = asHost;
   state.hostPeerId = `${ROOM_PREFIX}${roomCode}`;
+  state.autoGo = Boolean(meta.autoGo);
+
+  // Nome e cor: o host define; quem entra mostra o que já conhecia até o host confirmar
+  state.roomName = cleanRoomName(meta.name) || (asHost ? cleanRoomName(`Sala de ${username}`) : '');
+  state.roomColor = meta.color ? cleanRoomColor(meta.color) : asHost ? ROOM_COLORS[0] : '';
+
+  // Avatar: o salvo no navegador ou, na primeira vez, um sorteado pelo apelido (fica salvo)
+  state.myAvatar = sanitizeAvatar(state.myAvatar || loadSavedAvatar(), username);
+  saveMyAvatar(state.myAvatar);
 
   setLobbyStatus(asHost ? 'Criando sala...' : `Conectando à sala ${roomCode}...`);
 
@@ -280,7 +300,8 @@ function startSession(roomCode, asHost) {
       peerId: id,
       username: state.myUsername,
       isStreaming: false,
-      hasMic: false
+      hasMic: false,
+      avatar: state.myAvatar
     });
 
     if (asHost) {
@@ -302,7 +323,17 @@ function startSession(roomCode, asHost) {
 
   peer.on('error', (err) => {
     console.error('[PeerJS Error]', err);
-    if (err.type === 'unavailable-id' && asHost) {
+    if (err.type === 'unavailable-id' && asHost && state.autoGo) {
+      // A sala ainda estava aberta (talvez em outra aba): entra nela como convidado
+      state.autoGo = false;
+      showToast('Essa sala já estava aberta. Entrando como convidado.');
+      try {
+        peer.destroy();
+      } catch (e) {
+        /* já destruído */
+      }
+      startSession(roomCode, false, { name: state.roomName, color: state.roomColor });
+    } else if (err.type === 'unavailable-id' && asHost) {
       setLobbyStatus('Esse código de sala já está em uso! Tente clicar em "Entrar com Código" ou gere outro.', true);
     } else if (err.type === 'peer-unavailable') {
       setLobbyStatus(`Sala "${roomCode}" não encontrada ou o Host já fechou a sala.`, true);
@@ -311,6 +342,16 @@ function startSession(roomCode, asHost) {
       setLobbyStatus(`Erro de conexão: ${err.type || err.message}`, true);
     }
   });
+}
+
+// Encerra transmissão, voz e conexões e vai para o endereço dado (por padrão, o lobby)
+function leaveRoom(url) {
+  stopScreenShare();
+  releaseRawStream();
+  if (state.myPeer) {
+    state.myPeer.destroy();
+  }
+  window.location.href = url || window.location.pathname;
 }
 
 function connectToPeer(targetPeerId, isInitialHostConn = false) {
@@ -338,15 +379,21 @@ function setupDataConnection(conn, isInitialHostConn = false) {
     }
 
     // Envia nossas informações atuais para o peer recém-conectado
-    conn.send({
+    const hello = {
       type: 'HELLO',
       peerId: state.myPeerId,
       username: state.myUsername,
       isStreaming: Boolean(state.localScreenStream),
       hasMic: Boolean(state.localVoiceStream),
       micMuted: voice.muted,
-      deafened: voice.deafened
-    });
+      deafened: voice.deafened,
+      avatar: state.myAvatar
+    };
+    // O host é quem dá nome e cor à sala
+    if (state.isHost) {
+      hello.room = { name: state.roomName, color: state.roomColor };
+    }
+    conn.send(hello);
   });
 
   conn.on('data', (data) => {
@@ -374,8 +421,14 @@ function handleSignalingData(conn, data) {
         isStreaming: Boolean(data.isStreaming),
         hasMic: Boolean(data.hasMic),
         micMuted: Boolean(data.micMuted),
-        deafened: Boolean(data.deafened)
+        deafened: Boolean(data.deafened),
+        avatar: sanitizeAvatar(data.avatar, data.username)
       });
+
+      // Nome e cor da sala vêm do host
+      if (data.room && !state.isHost && data.peerId === state.hostPeerId) {
+        applyRoomMeta(data.room);
+      }
 
       if (isNew) {
         addSystemMessage(`${data.username} entrou na sala.`);
@@ -412,6 +465,8 @@ function handleSignalingData(conn, data) {
         broadcastRoomRoster();
       }
       renderMembersList();
+      // Quem acabou de chegar precisa saber onde meu avatar está na praça
+      worldSendState(conn);
       break;
     }
 
@@ -436,6 +491,7 @@ function handleSignalingData(conn, data) {
       // Recebido do Host: garante que nos conectemos diretamente a todos os outros amigos da sala
       if (Array.isArray(data.members)) {
         data.members.forEach((m) => {
+          m.avatar = sanitizeAvatar(m.avatar, m.username);
           state.members.set(m.peerId, m);
           if (m.peerId !== state.myPeerId && !state.dataConns.has(m.peerId)) {
             connectToPeer(m.peerId, false);
@@ -473,6 +529,21 @@ function handleSignalingData(conn, data) {
 
     case 'CHAT': {
       appendChatMessage(data.username, data.text, data.timestamp);
+      if (data.peerId) worldBubble(data.peerId, data.text);
+      break;
+    }
+
+    case 'AVATAR': {
+      const member = state.members.get(data.peerId);
+      if (member) {
+        member.avatar = sanitizeAvatar(data.avatar, member.username);
+        renderMembersList();
+      }
+      break;
+    }
+
+    case 'WALK': {
+      worldOnWalk(data);
       break;
     }
 
@@ -1130,8 +1201,12 @@ function removeScreenStreamTile(peerId) {
 
 function refreshStageVisibility() {
   const count = state.screenStreams.size;
-  dom.emptyStage.classList.toggle('hidden', count > 0);
-  dom.streamsGrid.classList.toggle('hidden', count === 0);
+  // A praça aparece quando ninguém transmite ou quando você a escolhe no topo
+  const showWorld = count === 0 || state.layoutMode === 'world';
+  dom.worldStage.classList.toggle('hidden', !showWorld);
+  dom.streamsGrid.classList.toggle('hidden', showWorld);
+  dom.stageArea.classList.toggle('showing-streams', !showWorld);
+  worldSetVisible(showWorld && !dom.appScreen.classList.contains('hidden'));
 
   // Atualiza destaque se estivermos no modo spotlight
   const tiles = dom.streamsGrid.querySelectorAll('.stream-tile');
@@ -1151,6 +1226,7 @@ function setLayoutMode(mode) {
   dom.streamsGrid.classList.toggle('mode-spotlight', mode === 'spotlight');
   dom.btnLayoutGrid.classList.toggle('active', mode === 'grid');
   dom.btnLayoutSpotlight.classList.toggle('active', mode === 'spotlight');
+  dom.btnLayoutWorld.classList.toggle('active', mode === 'world');
 
   if (mode === 'spotlight' && !state.spotlightPeerId && state.screenStreams.size > 0) {
     state.spotlightPeerId = Array.from(state.screenStreams.keys())[0];
@@ -1216,16 +1292,12 @@ function enterRoomUI() {
   dom.displayRoomCode.textContent = state.roomCode;
   dom.networkRoleBadge.textContent = state.isHost ? 'Host' : 'Convidado';
 
-  // Identidade da sala no trilho e no cabeçalho dos canais
-  dom.roomTitleName.textContent = state.roomCode;
-  dom.railRoomIcon.textContent = state.roomCode.replace(/[^A-Z0-9]/gi, '').slice(0, 2).toUpperCase() || '#';
-  dom.railRoomIcon.title = `Sala ${state.roomCode}`;
-  document.title = `${state.roomCode} — AzogStream`;
+  // Nome, cor e ícone da sala no trilho, mais as salas recentes
+  applyRoomIdentity();
 
   // Painel do usuário
   dom.userPanelName.textContent = state.myUsername;
-  dom.userPanelAvatar.firstChild.textContent = initialsOf(state.myUsername);
-  dom.userPanelAvatar.style.background = avatarBackground(state.myUsername);
+  updateUserPanelAvatar();
 
   // Em telas menores/celulares, inicia com o chat recolhido para focar no vídeo
   setChatOpen(window.innerWidth > 1180);
@@ -1235,6 +1307,16 @@ function enterRoomUI() {
   window.history.replaceState({}, '', newUrl);
 
   renderMembersList();
+  refreshStageVisibility();
+}
+
+// O rosto do avatar (cabeça e ombros) no painel do usuário
+function updateUserPanelAvatar() {
+  const av = sanitizeAvatar(state.myAvatar, state.myUsername);
+  dom.userPanelAvatar.firstChild.textContent = '';
+  dom.userPanelAvatar.classList.add('head');
+  dom.userPanelAvatar.style.background = '';
+  dom.userPanelAvatar.style.backgroundImage = `url(${avatarHeadUrl(av)})`;
 }
 
 function renderMembersList() {
@@ -1257,7 +1339,7 @@ function renderMembersList() {
     const sub = m.isStreaming ? 'Transmitindo ao vivo' : m.hasMic ? 'No canal de voz' : 'Assistindo';
 
     li.innerHTML = `
-      <div class="member-avatar" style="background: ${avatarBackground(m.username)}">${escapeHtml(initialsOf(m.username))}</div>
+      <div class="member-avatar head" style="background-image: url(${avatarHeadUrl(sanitizeAvatar(m.avatar, m.username))})"></div>
       <div class="member-text">
         <span class="member-name">${escapeHtml(m.username)}${isMe ? ' (Você)' : ''}${isRoomHost ? ' 👑' : ''}</span>
         <span class="member-sub">${sub}</span>
@@ -1336,11 +1418,15 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+function setStreamMenuOpen(open) {
+  dom.streamMenu.classList.toggle('hidden', !open);
+  dom.btnToggleStream.setAttribute('aria-expanded', String(open));
+}
+
 function updateStreamControlsUI(isStreaming) {
   dom.btnToggleStream.classList.toggle('active-stream', isStreaming);
-  dom.streamBtnLabel.textContent = isStreaming
-    ? 'Parar Transmissão'
-    : 'Transmitir Meu Jogo / Tela';
+  dom.streamBtnLabel.textContent = isStreaming ? 'Parar transmissão' : 'Transmitir';
+  if (isStreaming) setStreamMenuOpen(false);
 
   dom.btnToggleSelfPreview.classList.toggle('hidden', !isStreaming);
   if (!isStreaming) {
@@ -1364,16 +1450,23 @@ function bindRoomEvents() {
     showToast('Link direto da sala copiado!');
   });
 
+  // Botão flutuante: parado abre o menu de escolhas; transmitindo, encerra
   dom.btnToggleStream.addEventListener('click', () => {
     if (state.localScreenStream) {
       stopScreenShare();
     } else {
-      startScreenShare();
+      setStreamMenuOpen(dom.streamMenu.classList.contains('hidden'));
     }
   });
-
-  dom.btnEmptyStartStream.addEventListener('click', () => {
+  dom.btnMenuShare.addEventListener('click', () => {
+    setStreamMenuOpen(false);
     startScreenShare();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.stage-fab')) setStreamMenuOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setStreamMenuOpen(false);
   });
 
   const handleManualReconnect = () => {
@@ -1383,13 +1476,6 @@ function bindRoomEvents() {
   if (dom.btnReconnectStreams) {
     dom.btnReconnectStreams.addEventListener('click', handleManualReconnect);
   }
-  if (dom.btnEmptyReconnect) {
-    dom.btnEmptyReconnect.addEventListener('click', handleManualReconnect);
-  }
-
-  dom.btnToggleMic.addEventListener('click', () => {
-    toggleMicrophone();
-  });
 
   // Desliga/liga completamente o decodificador local para poupar GPU e não perder FPS no jogo
   dom.btnToggleSelfPreview.addEventListener('click', () => {
@@ -1416,6 +1502,7 @@ function bindRoomEvents() {
 
   dom.btnLayoutGrid.addEventListener('click', () => setLayoutMode('grid'));
   dom.btnLayoutSpotlight.addEventListener('click', () => setLayoutMode('spotlight'));
+  dom.btnLayoutWorld.addEventListener('click', () => setLayoutMode('world'));
 
   // Chat: abre/fecha pelo canal de texto, pelo botão do topo ou pelo X do painel
   const toggleChat = () => {
@@ -1461,34 +1548,27 @@ function bindRoomEvents() {
 
     const timestamp = Date.now();
     appendChatMessage(state.myUsername, text, timestamp);
+    worldBubble(state.myPeerId, text);
     broadcastData({
       type: 'CHAT',
+      peerId: state.myPeerId,
       username: state.myUsername,
       text,
       timestamp
     });
   });
 
-  dom.btnLeaveRoom.addEventListener('click', () => {
-    stopScreenShare();
-    releaseRawStream();
-    if (state.myPeer) {
-      state.myPeer.destroy();
-    }
-    window.location.href = window.location.pathname;
-  });
+  dom.btnLeaveRoom.addEventListener('click', () => leaveRoom());
 
   // Eventos do Modal PS5 / PSN
   const openPs5Modal = () => {
+    setStreamMenuOpen(false);
     dom.ps5Modal.classList.remove('hidden');
     populateCaptureDevices();
   };
 
   if (dom.btnOpenPs5Modal) {
     dom.btnOpenPs5Modal.addEventListener('click', openPs5Modal);
-  }
-  if (dom.btnEmptyPs5) {
-    dom.btnEmptyPs5.addEventListener('click', openPs5Modal);
   }
   if (dom.btnClosePs5Modal) {
     dom.btnClosePs5Modal.addEventListener('click', () => {
@@ -1551,9 +1631,6 @@ function bindRoomEvents() {
 
   if (dom.btnOpenDiagModal) {
     dom.btnOpenDiagModal.addEventListener('click', openAndRunDiag);
-  }
-  if (dom.btnEmptyDiag) {
-    dom.btnEmptyDiag.addEventListener('click', openAndRunDiag);
   }
   if (dom.btnCloseDiagModal) {
     dom.btnCloseDiagModal.addEventListener('click', () => {
@@ -2244,6 +2321,9 @@ async function startPs5CaptureCardStream() {
 
 // Inicializa tudo ao carregar a página
 document.addEventListener('DOMContentLoaded', () => {
+  initAvatar();
+  initWorld();
+  initRooms();
   initLobby();
   bindRoomEvents();
   initVoice();

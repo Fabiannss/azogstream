@@ -26,24 +26,41 @@
         </div>
         <div>
           <h1>AzogStream <span class="badge-p2p">60FPS</span></h1>
-          <p class="subtitle">Transmissão de jogos em alta qualidade com múltiplos streams e baixa latência</p>
+          <p class="subtitle">Salas com voz, chat e lives em alta qualidade, direto entre os amigos</p>
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="username-input">Seu Apelido (Nickname)</label>
-        <input type="text" id="username-input" placeholder="Ex: PlayerOne" maxlength="24" autocomplete="off" />
+      <div class="identity-row">
+        <button id="btn-lobby-avatar" class="lobby-avatar-btn" type="button" title="Editar seu avatar">
+          <canvas id="lobby-avatar-canvas" width="16" height="24"></canvas>
+          <span class="lobby-avatar-edit">✎</span>
+        </button>
+        <div class="form-group identity-name">
+          <label for="username-input">Seu apelido</label>
+          <input type="text" id="username-input" placeholder="Ex: PlayerOne" maxlength="24" autocomplete="off" />
+        </div>
       </div>
 
       <div class="lobby-tabs">
-        <button id="tab-create" class="lobby-tab active" type="button">Criar Nova Sala</button>
-        <button id="tab-join" class="lobby-tab" type="button">Entrar com Código</button>
+        <button id="tab-create" class="lobby-tab active" type="button">Criar minha sala</button>
+        <button id="tab-join" class="lobby-tab" type="button">Entrar na sala de um amigo</button>
       </div>
 
       <!-- Aba Criar Sala -->
       <div id="panel-create" class="tab-panel active">
+        <div class="create-room-head">
+          <div id="create-room-icon" class="recent-room-icon create-room-icon">SA</div>
+          <div class="form-group create-room-name">
+            <label for="create-room-name">Nome da sala</label>
+            <input type="text" id="create-room-name" placeholder="Ex: Sala do Fabiano" maxlength="24" autocomplete="off" />
+          </div>
+        </div>
         <div class="form-group">
-          <label for="create-room-code">Código da Sala (Personalizável)</label>
+          <label>Cor da sala</label>
+          <div id="create-room-colors" class="av-choices"></div>
+        </div>
+        <div class="form-group">
+          <label for="create-room-code">Código para convidar (personalizável)</label>
           <div class="input-with-action">
             <input type="text" id="create-room-code" class="mono-input" maxlength="20" autocomplete="off" />
             <button id="btn-regenerate-code" class="icon-btn" type="button" title="Gerar outro código">
@@ -54,10 +71,10 @@
               </svg>
             </button>
           </div>
-          <small class="hint">Seus amigos usarão esse código ou o link direto para entrar.</small>
+          <small class="hint">Seus amigos entram com esse código ou pelo link. A sala fica aberta enquanto você estiver nela.</small>
         </div>
         <button id="btn-create-room" class="primary-btn full-width" type="button">
-          <span>Criar Sala e Entrar</span>
+          <span>Criar sala e entrar</span>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="5" y1="12" x2="19" y2="12"></line>
             <polyline points="12 5 19 12 12 19"></polyline>
@@ -68,11 +85,11 @@
       <!-- Aba Entrar em Sala -->
       <div id="panel-join" class="tab-panel">
         <div class="form-group">
-          <label for="join-room-code">Código da Sala dos Amigos</label>
+          <label for="join-room-code">Código da sala dos amigos</label>
           <input type="text" id="join-room-code" class="mono-input" placeholder="Ex: ARENA-4821" maxlength="20" autocomplete="off" />
         </div>
         <button id="btn-join-room" class="primary-btn full-width" type="button">
-          <span>Conectar à Sala</span>
+          <span>Conectar à sala</span>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
             <polyline points="10 17 15 12 10 7"></polyline>
@@ -83,18 +100,24 @@
 
       <div id="lobby-status" class="lobby-status hidden"></div>
 
+      <div id="recent-rooms" class="recent-rooms hidden">
+        <div class="recent-rooms-title">Salas recentes</div>
+        <div id="recent-rooms-list" class="recent-rooms-list"></div>
+        <small class="hint">Para voltar, o dono da sala precisa estar com ela aberta. Se a sala era sua, ela é recriada com o mesmo código.</small>
+      </div>
+
       <div class="lobby-tips">
         <div class="tip-item">
+          <span class="tip-icon">🧑‍🎤</span>
+          <span><strong>Praça:</strong> quando ninguém está transmitindo, o avatar de cada pessoa passeia pela sala. Clique no chão para andar.</span>
+        </div>
+        <div class="tip-item">
           <span class="tip-icon">⚡</span>
-          <span><strong>Modo +FPS Ativo:</strong> Codificação via Hardware GPU (H.264) para não perder FPS no jogo.</span>
+          <span><strong>Modo +FPS:</strong> codificação por hardware (H.264) para não perder FPS no jogo.</span>
         </div>
         <div class="tip-item">
           <span class="tip-icon">🎮</span>
-          <span><strong>PS5 / PSN & PC:</strong> Ao entrar na sala, use o botão azul <strong>"Transmitir PS5 / PSN"</strong> ou <strong>"Transmitir Meu Jogo"</strong>.</span>
-        </div>
-        <div class="tip-item">
-          <span class="tip-icon">🔊</span>
-          <span><strong>Áudio + Multi-Stream:</strong> Vários amigos podem transmitir ao mesmo tempo com áudio estéreo!</span>
+          <span><strong>PC e PS5/PSN:</strong> dentro da sala, use o botão <strong>Transmitir</strong> no canto da tela.</span>
         </div>
       </div>
     </div>
@@ -119,6 +142,7 @@
         <span class="rail-marker"></span>
         <div id="rail-room-icon" class="rail-item rail-room" title="Sala atual">--</div>
       </div>
+      <div id="rail-recents" class="rail-recents"></div>
       <div class="rail-slot">
         <button id="btn-rail-new-room" class="rail-item rail-add" type="button" title="Criar ou entrar em outra sala (abre em nova aba)">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
@@ -302,6 +326,13 @@
               </svg>
               <span>Destaque</span>
             </button>
+            <button id="btn-layout-world" class="layout-btn" type="button" title="Praça: avatares passeando pela sala">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="7" r="3"></circle>
+                <path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"></path>
+              </svg>
+              <span>Praça</span>
+            </button>
           </div>
           <button id="btn-toggle-sidebar" class="icon-btn" type="button" title="Mostrar/Ocultar chat da sala">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -315,101 +346,49 @@
       <main class="room-main">
         <!-- PALCO DE STREAMS -->
         <section class="stage-col">
-          <div class="stage-area">
-            <!-- Estado Vazio (Quando ninguém está transmitindo ainda) -->
-            <div id="empty-stage" class="empty-stage">
-              <div class="empty-illustration">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                  <line x1="8" y1="21" x2="16" y2="21"></line>
-                  <line x1="12" y1="17" x2="12" y2="21"></line>
-                  <polygon points="10 8 15 10.5 10 13 10 8"></polygon>
-                </svg>
-              </div>
-              <h2>Nenhuma transmissão ativa no momento</h2>
-              <p>Clique em <strong>"Transmitir Meu Jogo / Tela"</strong> na barra inferior para iniciar um stream em 60 FPS, ou aguarde seus amigos iniciarem!</p>
-              <div class="empty-actions">
-                <button id="btn-empty-start-stream" class="primary-btn" type="button">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                    <polyline points="8 21 12 17 16 21"></polyline>
-                  </svg>
-                  <span>Transmitir Tela PC</span>
-                </button>
-                <button id="btn-empty-ps5" class="ps5-hero-btn" type="button">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="6" width="20" height="12" rx="4"></rect>
-                    <line x1="6" y1="12" x2="10" y2="12"></line>
-                    <line x1="8" y1="10" x2="8" y2="14"></line>
-                    <circle cx="15" cy="11" r="1" fill="currentColor"></circle>
-                    <circle cx="17" cy="13" r="1" fill="currentColor"></circle>
-                  </svg>
-                  <span>Conectar PS5 / PSN</span>
-                </button>
-                <button id="btn-empty-reconnect" class="chip-btn accent big" type="button">
-                  <span>🔄 Sincronizar / Receber Live</span>
-                </button>
-                <button id="btn-empty-diag" class="chip-btn diag-btn big" type="button">
-                  <span>🩺 Testar Minha Conexão</span>
-                </button>
+          <div id="stage-area" class="stage-area">
+            <!-- PRAÇA: aparece quando ninguém transmite (ou pelo botão Praça) -->
+            <div id="world-stage" class="world-stage hidden">
+              <div id="world-frame" class="world-frame">
+                <canvas id="world-canvas" width="384" height="216"></canvas>
+                <div id="world-labels" class="world-labels"></div>
+                <div class="world-hint">Clique no chão para andar</div>
               </div>
             </div>
 
             <!-- Container de Vídeos (Suporta Grade ou Spotlight + Miniaturas) -->
             <div id="streams-grid" class="streams-container mode-grid hidden"></div>
+
+            <!-- BOTÃO FLUTUANTE DE TRANSMISSÃO (canto) -->
+            <div class="stage-fab">
+              <div id="stream-menu" class="stream-menu hidden">
+                <button id="btn-menu-share" class="menu-item" type="button">
+                  <span class="menu-item-icon">🖥️</span>
+                  <span><strong>Tela ou jogo do PC</strong><small>Janela, aba ou monitor, com áudio</small></span>
+                </button>
+                <button id="btn-open-ps5-modal" class="menu-item" type="button" title="Transmitir jogo do PS5 / PSN na sala">
+                  <span class="menu-item-icon">🎮</span>
+                  <span><strong>PS5 / PSN</strong><small>Placa de captura, Remote Play ou Twitch/YouTube</small></span>
+                </button>
+              </div>
+              <!-- Ocultar próprio preview local para economizar GPU (aparece só ao transmitir) -->
+              <button id="btn-toggle-self-preview" class="fab-btn hidden" type="button" title="Pausa o vídeo da sua própria tela no seu navegador para não gastar GPU/FPS enquanto você joga">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <span id="self-preview-label">Eco de GPU: Ativado (+FPS)</span>
+              </button>
+              <button id="btn-toggle-stream" class="fab-btn primary" type="button" aria-haspopup="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                <span id="stream-btn-label">Transmitir</span>
+              </button>
+            </div>
           </div>
-
-          <!-- BARRA DE CONTROLES DO PALCO -->
-          <footer class="control-dock">
-            <!-- Botão Principal: Iniciar / Parar Stream de Tela -->
-            <button id="btn-toggle-stream" class="dock-btn stream-action" type="button">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                <line x1="8" y1="21" x2="16" y2="21"></line>
-                <line x1="12" y1="17" x2="12" y2="21"></line>
-              </svg>
-              <span id="stream-btn-label">Transmitir Meu Jogo / Tela</span>
-            </button>
-
-            <!-- Botão PS5 / PSN Hub -->
-            <button id="btn-open-ps5-modal" class="dock-btn ps5-action" type="button" title="Transmitir jogo do PS5 / PSN na sala">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="6" width="20" height="12" rx="4"></rect>
-                <line x1="6" y1="12" x2="10" y2="12"></line>
-                <line x1="8" y1="10" x2="8" y2="14"></line>
-                <circle cx="15" cy="11" r="1" fill="currentColor"></circle>
-                <circle cx="17" cy="13" r="1" fill="currentColor"></circle>
-              </svg>
-              <span>Transmitir PS5 / PSN</span>
-            </button>
-
-            <!-- Botão de Microfone Opcional -->
-            <button id="btn-toggle-mic" class="dock-btn" type="button" title="Ativar/Desativar Microfone de Voz">
-              <svg id="icon-mic-off" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="1" y1="1" x2="23" y2="23"></line>
-                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-              </svg>
-              <svg id="icon-mic-on" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-              </svg>
-              <span id="mic-btn-label">Mic Desativado</span>
-            </button>
-
-            <!-- Ocultar próprio preview local para economizar GPU (Ativo por padrão ao transmitir!) -->
-            <button id="btn-toggle-self-preview" class="dock-btn hidden" type="button" title="Pausa o vídeo da sua própria tela no seu navegador para não gastar GPU/FPS enquanto você joga">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-              </svg>
-              <span id="self-preview-label">Eco de GPU: Ativado (+FPS)</span>
-            </button>
-          </footer>
         </section>
 
         <!-- PAINEL DO CHAT -->
@@ -562,6 +541,11 @@
     </div>
   </div>
 
+  <!-- MODAL DE AVATAR (montado por avatar.js) -->
+  <div id="avatar-modal" class="modal-overlay hidden">
+    <div id="avatar-modal-card" class="modal-card avatar-modal-card"></div>
+  </div>
+
   <!-- Container oculto para áudios de microfone P2P -->
   <div id="voice-audio-container" class="hidden"></div>
 
@@ -662,5 +646,8 @@
 
   <script src="app.js"></script>
   <script src="voice.js"></script>
+  <script src="avatar.js"></script>
+  <script src="world.js"></script>
+  <script src="rooms.js"></script>
 </body>
 </html>

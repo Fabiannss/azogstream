@@ -530,21 +530,13 @@ function voiceDecorateMember(li, m) {
 function renderVoiceUI() {
   const live = voice.connected && !voice.muted;
 
-  // Botão do microfone na barra do palco
-  dom.btnToggleMic.classList.toggle('mic-active', live);
-  dom.btnToggleMic.classList.toggle('mic-muted', voice.connected && voice.muted);
-  dom.iconMicOff.classList.toggle('hidden', live);
-  dom.iconMicOn.classList.toggle('hidden', !live);
-  dom.micBtnLabel.textContent = !voice.connected ? 'Entrar na Voz' : voice.muted ? 'Mic Mudo' : 'Mic Ligado';
-  dom.btnToggleMic.title = !voice.connected
+  // Painel do usuário
+  dom.btnUserMic.classList.toggle('mic-active', live);
+  dom.btnUserMic.title = !voice.connected
     ? 'Entrar no canal de voz'
     : voice.muted
       ? 'Reativar microfone'
       : 'Silenciar microfone';
-
-  // Painel do usuário
-  dom.btnUserMic.classList.toggle('mic-active', live);
-  dom.btnUserMic.title = dom.btnToggleMic.title;
   vdom.btnDeafen.classList.toggle('on', voice.deafened);
   vdom.btnDeafen.title = voice.deafened ? 'Voltar a ouvir' : 'Ensurdecer (parar de ouvir as vozes)';
 
